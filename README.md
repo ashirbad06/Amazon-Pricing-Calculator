@@ -1,5 +1,34 @@
 # Amazon Pricing Calculator
 
+## Prerequisites
+- Node.js >= 18.18.0
+- nvm (Node Version Manager)
+
+## Setup
+
+### Node.js Setup using NVM
+If you don't have nvm installed, install it using:
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.3/install.sh | bash
+source ~/.bashrc
+command -v nvm
+```
+
+Then install and use Node.js 18.17.0:
+```bash
+nvm install 18.17.0
+nvm use 18.17.0
+nvm alias default 18.17.0
+```
+
+### Installation
+1. Clone the repository
+2. Install dependencies:
+```bash
+npm install
+npm install axios express
+```
+
 An interactive calculator for estimating Amazon seller fees and pricing strategies.
 
 ## Features
