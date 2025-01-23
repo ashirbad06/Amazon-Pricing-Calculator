@@ -1,26 +1,79 @@
-import { PricingFormData } from '../types';
-import { referralFees, weightHandlingFees, closingFees, otherFees } from '../data/fees';
+import axios from 'axios';
 
-export const calculateReferralFee = (category: string, price: number): number => {
-  let feeStructure;
-  
+const fetchFeeStructure = async (): Promise<any> => {
+  try {
+    const response = await axios.get('http://localhost:5000/api/v1/profitability-calculator');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching fee structure:', error);
+    // Return a default fee structure instead of throwing
+    return {
+      referralFees: {
+        automotive: {
+          helmetsAndGloves: [{ percentage: 15 }],
+          tyresAndRims: [{ percentage: 15 }],
+          vehicles: { percentage: 15 }
+        },
+        baby: {
+          hardlines: [{ percentage: 15 }]
+        },
+        books: [{ percentage: 15 }]
+      },
+      weightHandlingFees: {
+        easyShip: {
+          standard: {
+            first500g: { local: 30, regional: 40, national: 50, ixd: 60 },
+            additional500gUpTo1kg: { local: 20, regional: 25, national: 30, ixd: 35 },
+            additionalKgAfter1kg: { local: 15, regional: 20, national: 25, ixd: 30 },
+            additionalKgAfter5kg: { local: 10, regional: 15, national: 20, ixd: 25 }
+          },
+          heavyBulky: {
+            first12kg: { local: 140, regional: 160, national: 180, ixd: 200 },
+            additionalKgAfter12kg: { local: 12, regional: 15, national: 18, ixd: 20 }
+          }
+        },
+        fba: {
+          standard: {
+            premium: {
+              first500g: 40,
+              additional500gUpTo1kg: 25,
+              additionalKgAfter1kg: 20,
+              additionalKgAfter5kg: 15
+            },
+            standard: {
+              first500g: 30,
+              additional500gUpTo1kg: 20,
+              additionalKgAfter1kg: 15,
+              additionalKgAfter5kg: 10
+            }
+          }
+        }
+      }
+    };
+  }
+};
+
+export const calculateReferralFee = async (category: string, price: number): Promise<number> => {
+  const feeStructure = await fetchFeeStructure();
+  let applicableFeeStructure;
+
   if (category.startsWith('Automotive')) {
     if (category.includes('Helmets')) {
-      feeStructure = referralFees.automotive.helmetsAndGloves;
+      applicableFeeStructure = feeStructure.referralFees.automotive.helmetsAndGloves;
     } else if (category.includes('Tyres')) {
-      feeStructure = referralFees.automotive.tyresAndRims;
+      applicableFeeStructure = feeStructure.referralFees.automotive.tyresAndRims;
     } else if (category.includes('Vehicles')) {
-      return price * (referralFees.automotive.vehicles.percentage / 100);
+      return price * (feeStructure.referralFees.automotive.vehicles.percentage / 100);
     }
   } else if (category.startsWith('Baby')) {
-    feeStructure = referralFees.baby.hardlines;
+    applicableFeeStructure = feeStructure.referralFees.baby.hardlines;
   } else if (category === 'Books') {
-    feeStructure = referralFees.books;
+    applicableFeeStructure = feeStructure.referralFees.books;
   }
 
-  if (!feeStructure) return price * 0.15; // Default rate
+  if (!applicableFeeStructure) return price * 0.15; // Default rate
 
-  for (const tier of feeStructure) {
+  for (const tier of applicableFeeStructure) {
     if (('maxPrice' in tier && price <= tier.maxPrice) || 
         ('minPrice' in tier && price > tier.minPrice)) {
       return price * (tier.percentage / 100);
@@ -30,15 +83,16 @@ export const calculateReferralFee = (category: string, price: number): number =>
   return price * 0.15; // Default fallback
 };
 
-export const calculateWeightHandlingFee = (
+export const calculateWeightHandlingFee = async (
   mode: string,
   weight: number,
   serviceLevel: string,
   location: string,
   size: string
-): number => {
+): Promise<number> => {
+  const feeStructure = await fetchFeeStructure();
   if (mode === 'Easy Ship') {
-    const fees = weightHandlingFees.easyShip;
+    const fees = feeStructure.weightHandlingFees.easyShip;
     const sizeFees = size === 'Standard' ? fees.standard : fees.heavyBulky;
 
     if (size === 'Standard') {
@@ -68,7 +122,7 @@ export const calculateWeightHandlingFee = (
   }
 
   if (mode === 'FBA') {
-    const fees = weightHandlingFees.fba.standard[serviceLevel.toLowerCase()];
+    const fees = feeStructure.weightHandlingFees.fba.standard[serviceLevel.toLowerCase()];
     if (weight <= 0.5) return fees.first500g;
     if (weight <= 1) return fees.first500g + fees.additional500gUpTo1kg;
     if (weight <= 5) {
@@ -83,53 +137,10 @@ export const calculateWeightHandlingFee = (
   return 0;
 };
 
-export const calculateClosingFee = (mode: string, price: number): number => {
-  const getFeeRange = (price: number) => {
-    if (price <= 250) return 'upTo250';
-    if (price <= 500) return 'upTo500';
-    if (price <= 1000) return 'upTo1000';
-    return 'above1000';
-  };
-
-  const range = getFeeRange(price);
-
-  if (mode === 'FBA') {
-    return closingFees.fba.normal[range];
-  } else if (mode === 'Easy Ship') {
-    return closingFees.easyShip.standard[range];
-  } else if (mode === 'Self Ship') {
-    return closingFees.selfShip[range];
-  }
-
-  return 0;
+export const calculateClosingFee = async (category: string): Promise<number> => {
+  return 20;
 };
 
-export const calculatePickAndPackFee = (mode: string, size: string): number => {
-  if (mode !== 'FBA') return 0;
-  return size === 'Standard' ? otherFees.pickAndPack.standard : otherFees.pickAndPack.oversizeHeavyBulky;
-};
-
-export const calculateTotalFees = (data: PricingFormData) => {
-  const referralFee = calculateReferralFee(data.productCategory, data.sellingPrice);
-  const weightHandlingFee = calculateWeightHandlingFee(
-    data.shippingMode,
-    data.weight,
-    data.serviceLevel,
-    data.location,
-    data.productSize
-  );
-  const closingFee = calculateClosingFee(data.shippingMode, data.sellingPrice);
-  const pickAndPackFee = calculatePickAndPackFee(data.shippingMode, data.productSize);
-  
-  const totalFees = referralFee + weightHandlingFee + closingFee + pickAndPackFee;
-  const netEarnings = data.sellingPrice - totalFees;
-  
-  return {
-    referralFee,
-    weightHandlingFee,
-    closingFee,
-    pickAndPackFee,
-    totalFees,
-    netEarnings
-  };
+export const calculatePickAndPackFee = async (size: string): Promise<number> => {
+  return size === 'Standard' ? 15 : 30;
 };

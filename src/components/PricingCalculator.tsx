@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Calculator } from 'lucide-react';
 import { PricingFormData } from '../types';
-import { calculateTotalFees } from '../utils/feeCalculators';
+import { calculateClosingFee, calculatePickAndPackFee, calculateReferralFee, calculateWeightHandlingFee } from '../utils/feeCalculators';
 
 const categories = [
   'Automotive - Helmets & Riding Gloves',
@@ -16,7 +16,7 @@ const categories = [
 export default function PricingCalculator() {
   const [formData, setFormData] = useState<PricingFormData>({
     productCategory: categories[0],
-    sellingPrice: 0,
+    sellingPrice: 100,
     weight: 0.5,
     shippingMode: 'Easy Ship',
     serviceLevel: 'Standard',
@@ -25,10 +25,43 @@ export default function PricingCalculator() {
   });
 
   const [results, setResults] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleCalculate = () => {
-    const calculatedFees = calculateTotalFees(formData);
-    setResults(calculatedFees);
+  const handleCalculate = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const [referralFee, weightHandlingFee, closingFee, pickAndPackFee] = await Promise.all([
+        calculateReferralFee(formData.productCategory, formData.sellingPrice),
+        calculateWeightHandlingFee(
+          formData.shippingMode,
+          formData.weight,
+          formData.serviceLevel,
+          formData.location,
+          formData.productSize
+        ),
+        calculateClosingFee(formData.productCategory),
+        formData.shippingMode === 'FBA' ? calculatePickAndPackFee(formData.productSize) : 0
+      ]);
+      
+      const totalFees = referralFee + weightHandlingFee + closingFee + pickAndPackFee;
+      const netEarnings = formData.sellingPrice - totalFees;
+      
+      setResults({
+        referralFee,
+        weightHandlingFee,
+        closingFee,
+        pickAndPackFee,
+        totalFees,
+        netEarnings
+      });
+    } catch (err) {
+      setError('Failed to calculate fees. Please try again.');
+      console.error('Calculation error:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -47,6 +80,12 @@ export default function PricingCalculator() {
             <Calculator className="w-8 h-8 text-blue-600" />
             <h1 className="text-2xl font-bold text-gray-900">Amazon Pricing Calculator</h1>
           </div>
+
+          {error && (
+            <div className="mb-4 p-4 bg-red-100 text-red-700 rounded-md">
+              {error}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-6">
@@ -164,9 +203,14 @@ export default function PricingCalculator() {
 
               <button
                 onClick={handleCalculate}
-                className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors"
+                disabled={loading}
+                className={`w-full ${
+                  loading 
+                    ? 'bg-blue-400 cursor-not-allowed' 
+                    : 'bg-blue-600 hover:bg-blue-700'
+                } text-white py-2 px-4 rounded-md transition-colors`}
               >
-                Calculate Fees
+                {loading ? 'Calculating...' : 'Calculate Fees'}
               </button>
             </div>
 
